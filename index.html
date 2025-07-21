@@ -55,7 +55,7 @@
       });
 
     function loadKasus() {
-      Papa.parse("Data_tidy.csv", {
+      Papa.parse("https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv", {
         download: true,
         header: true,
         complete: function(results) {
