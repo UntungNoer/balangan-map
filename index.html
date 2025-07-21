@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
     body, html, #map { margin:0; padding:0; height:100%; }
     .filter-box {
@@ -16,7 +17,6 @@
   </style>
 </head>
 <body>
-
 <div id="map"></div>
 
 <div class="filter-box">
@@ -33,7 +33,7 @@
   let kasusData = {};
   let geojsonLayer;
 
-  // Load GeoJSON
+  // Load GeoJSON dari GitHub
   fetch("https://raw.githubusercontent.com/UntungNoer/balangan-map/main/Dsblg.geojson")
     .then(res => res.json())
     .then(geojson => {
@@ -50,12 +50,16 @@
             const tahun = document.getElementById("filterTahun").value;
             const jenis = document.getElementById("filterJenis").value;
             const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-            layer.bindPopup(`<b>${feature.properties.DESA || id}</b><br>${jenis} (${tahun}): ${jumlah}`).openPopup();
+
+            const namaDesa = feature.properties.DESA || 'Desa tidak dikenal';
+            const namaKec = feature.properties.KECAMATAN || 'Kecamatan tidak dikenal';
+
+            layer.bindPopup(`<b>${namaDesa}</b><br><i>${namaKec}</i><br>${jenis} (${tahun}): ${jumlah}`).openPopup();
           });
         }
       }).addTo(map);
 
-      // Load kasus setelah GeoJSON
+      // Setelah peta siap, ambil data kasus
       loadKasus();
     });
 
@@ -113,11 +117,13 @@
     geojsonLayer.eachLayer(layer => {
       const id = layer.feature.properties.iddesa;
       const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-      const color = jumlah == 0 ? "#eee" : jumlah < 5 ? "#fee08b" : jumlah < 15 ? "#f46d43" : "#d73027";
+      const color = jumlah === 0 ? "#eee" :
+                    jumlah < 5 ? "#fee08b" :
+                    jumlah < 15 ? "#f46d43" :
+                    "#d73027";
       layer.setStyle({ fillColor: color });
     });
   }
 </script>
-
 </body>
 </html>
