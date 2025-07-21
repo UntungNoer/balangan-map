@@ -49,6 +49,7 @@
           onEachFeature: (feature, layer) => {
             const props = feature.properties;
             layer.bindTooltip(`${props.desa}, ${props.kecamatan}`);
+            layer.featureId = props.iddesa; // Untuk referensi update
           }
         }).addTo(map);
         loadKasus();
@@ -143,42 +144,35 @@
         const info = iddesaMap[id];
         if (!info) {
           layer.setStyle({ fillOpacity: 0 });
+          layer.removeFrom(map);
           return;
         }
 
         const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
 
-        const cocokKecamatan = !kecamatan || info.kecamatan === kecamatan;
-        const cocokPuskesmas = !puskesmas || info.puskesmas === puskesmas;
+        const cocok = (
+          (!kecamatan || info.kecamatan === kecamatan) &&
+          (!puskesmas || info.puskesmas === puskesmas)
+        );
 
-        if (cocokKecamatan && cocokPuskesmas) {
-          total += jumlah;
-
-          const color = jumlah === 0 ? "#eee" :
-                        jumlah < 5 ? "#fee08b" :
-                        jumlah < 15 ? "#f46d43" :
-                        "#d73027";
-
-          layer.setStyle({
-            fillColor: color,
-            fillOpacity: 0.7,
-            color: "#555"
-          });
-
-          layer.bindPopup(`
-            <strong>${layer.feature.properties.desa}</strong><br>
-            Kecamatan: ${layer.feature.properties.kecamatan}<br>
-            Puskesmas: ${info.puskesmas}<br>
-            Jumlah Kasus: ${jumlah}
-          `);
-        } else {
-          layer.setStyle({
-            fillColor: "#ccc",
-            fillOpacity: 0.2,
-            color: "#aaa"
-          });
-          layer.closePopup();
+        if (!cocok) {
+          map.removeLayer(layer);
+          return;
         }
+
+        total += jumlah;
+
+        const color = jumlah === 0 ? "#eee" :
+                      jumlah < 5 ? "#fee08b" :
+                      jumlah < 15 ? "#f46d43" :
+                      "#d73027";
+
+        layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
+
+        const kasusLabel = `${jenis} ${tahun}`;
+        layer.bindPopup(`<strong>${info.desa}</strong><br>Kecamatan: ${info.kecamatan}<br>${kasusLabel}: ${jumlah}`);
+
+        if (!map.hasLayer(layer)) map.addLayer(layer);
       });
 
       document.getElementById("totalKasus").innerHTML = `<strong>Total Kasus: ${total}</strong>`;
