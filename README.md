@@ -1,2 +1,2 @@
 # balangan-map
-Peta Kasus Penyakit Balangan
+Peta Kasus Penyakit Menular Balangan
