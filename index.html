@@ -42,7 +42,7 @@
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    let geojsonLayer;
+    let allLayers = {};
     let kasusData = {};
     let iddesaMap = {};
 
@@ -65,17 +65,28 @@
         if (!kasusData[iddesa]) kasusData[iddesa] = {};
         if (!kasusData[iddesa][tahun]) kasusData[iddesa][tahun] = {};
         kasusData[iddesa][tahun][jenis] = +jumlah;
-
         iddesaMap[iddesa] = { kecamatan: kec, Puskesmas: pusk, desa };
       });
 
-      // Isi dropdown filter
+      // Populate dropdowns
       const tahunList = [...new Set(rows.map(r => r[4]))].sort();
       tahunList.forEach(t => tahunSelect.innerHTML += `<option value="${t}">${t}</option>`);
       const jenisList = [...new Set(rows.map(r => r[5]))];
       jenisList.forEach(j => jenisSelect.innerHTML += `<option value="${j}">${j}</option>`);
       const kecList = [...new Set(rows.map(r => r[1]))];
       kecList.forEach(k => kecSelect.innerHTML += `<option value="${k}">${k}</option>`);
+
+      // GeoJSON -> simpan layer berdasarkan iddesa
+      geojson.features.forEach(feature => {
+        const id = feature.properties.iddesa;
+        const layer = L.geoJson(feature, {
+          style: { color: "#999", weight: 1, fillOpacity: 0 }
+        });
+        allLayers[id] = layer;
+      });
+
+      // Masukkan semua layer ke map tapi disembunyikan dulu
+      Object.values(allLayers).forEach(l => l.addTo(map));
 
       // Event filter bertingkat
       kecSelect.addEventListener("change", () => {
@@ -89,13 +100,7 @@
 
       [tahunSelect, jenisSelect, puskesmasSelect].forEach(el => el.addEventListener("change", updateMap));
 
-      geojsonLayer = L.geoJson(geojson, {
-        onEachFeature: function (feature, layer) {
-          layer.setStyle({ color: "#999", weight: 1, fillOpacity: 0.7 });
-        }
-      }).addTo(map);
-
-      tahunSelect.selectedIndex = tahunList.length - 1; // pilih tahun terakhir
+      tahunSelect.selectedIndex = tahunList.length - 1;
       kecSelect.dispatchEvent(new Event('change'));
     }
 
@@ -108,29 +113,29 @@
       let total = 0;
       let matchingLayers = [];
 
-      geojsonLayer.eachLayer(layer => {
-        const id = layer.feature.properties.iddesa;
-        const info = iddesaMap[id];
-        if (!info) {
-          layer.setStyle({ fillOpacity: 0 });
-          return;
-        }
+      Object.entries(allLayers).forEach(([iddesa, layer]) => {
+        const info = iddesaMap[iddesa];
+        if (!info) return;
 
-        const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
+        const jumlah = kasusData[iddesa]?.[tahun]?.[jenis] ?? 0;
         const cocok = (!kecamatan || info.kecamatan === kecamatan) &&
                       (!puskesmas || info.Puskesmas === puskesmas);
 
+        map.removeLayer(layer); // Selalu remove dulu
+
         if (cocok) {
           total += jumlah;
+
           const color = jumlah === 0 ? "#eee" :
                         jumlah < 5 ? "#fee08b" :
                         jumlah < 15 ? "#f46d43" : "#d73027";
 
           layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
+
           layer.bindPopup(`<b>${info.desa}</b><br>Kecamatan: ${info.kecamatan}<br>${jenis} ${tahun}: ${jumlah}`);
+          layer.addTo(map);
           matchingLayers.push(layer);
         } else {
-          layer.setStyle({ fillOpacity: 0 });
           layer.closePopup();
         }
       });
@@ -138,7 +143,7 @@
       document.getElementById("totalKasus").innerHTML = `<strong>Total Kasus: ${total}</strong>`;
 
       if (matchingLayers.length > 0) {
-        const group = new L.featureGroup(matchingLayers);
+        const group = new L.featureGroup(matchingLayers.map(l => l.getLayers()[0]));
         map.fitBounds(group.getBounds().pad(0.2));
       }
     }
