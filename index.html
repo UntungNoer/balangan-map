@@ -1,197 +1,149 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <meta charset="utf-8">
-  <title>Kasus Per Desa</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Peta Kasus Per Desa</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <style>
     body { margin: 0; font-family: sans-serif; }
-    #map { height: 80vh; width: 100%; }
-
-    .filter-panel {
+    #map { height: 90vh; width: 100vw; }
+    .filters {
+      padding: 10px;
+      background: #f9f9f9;
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      padding: 10px;
-      background: #f8f8f8;
+      align-items: center;
     }
-
-    .filter-panel label {
-      flex: 1 1 45%;
-      min-width: 150px;
+    .filters select {
+      padding: 5px;
     }
-
-    @media (max-width: 600px) {
-      .filter-panel label {
-        flex: 1 1 100%;
-      }
+    #totalKasus {
+      margin-left: auto;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <div class="filter-panel">
-    <label>Kecamatan: <select id="filterKecamatan"></select></label>
-    <label>Puskesmas: <select id="filterPuskesmas"></select></label>
+  <div class="filters">
     <label>Tahun: <select id="filterTahun"></select></label>
     <label>Jenis Kasus: <select id="filterJenis"></select></label>
-    <span id="totalKasus" style="padding-top: 5px;"></span>
+    <label>Kecamatan: <select id="filterKecamatan"></select></label>
+    <label>Puskesmas: <select id="filterPuskesmas"><option value="">Semua</option></select></label>
+    <span id="totalKasus"></span>
   </div>
   <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map = L.map('map').setView([-2.3, 115.6], 9);
+    const map = L.map('map').setView([-2.3, 115.6], 9);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
     let geojsonLayer;
     let kasusData = {};
     let iddesaMap = {};
-    let kecPuskesmasMap = {};
-    let geojsonFeatures = [];
 
-    fetch("Dsblg.geojson")
-      .then(res => res.json())
-      .then(geojson => {
-        geojsonFeatures = geojson.features;
-        geojsonLayer = L.geoJSON(geojson, {
-          style: { color: "#555", weight: 1, fillOpacity: 0.5 },
-          onEachFeature: (feature, layer) => {
-            layer.bindTooltip(`${feature.properties.desa}, ${feature.properties.kecamatan}`);
-          }
-        }).addTo(map);
-        loadKasus();
+    const tahunSelect = document.getElementById("filterTahun");
+    const jenisSelect = document.getElementById("filterJenis");
+    const kecSelect = document.getElementById("filterKecamatan");
+    const puskesmasSelect = document.getElementById("filterPuskesmas");
+
+    async function loadData() {
+      const [csvRes, geoRes] = await Promise.all([
+        fetch('https://untungnoer.github.io/balangan-map/Data_tidy.csv'),
+        fetch('https://untungnoer.github.io/balangan-map/Dsblg.geojson')
+      ]);
+      const csvText = await csvRes.text();
+      const geojson = await geoRes.json();
+
+      // Parse CSV
+      const rows = csvText.trim().split("\n").slice(1).map(row => row.split(","));
+      rows.forEach(([iddesa, kec, pusk, desa, tahun, jenis, jumlah]) => {
+        if (!kasusData[iddesa]) kasusData[iddesa] = {};
+        if (!kasusData[iddesa][tahun]) kasusData[iddesa][tahun] = {};
+        kasusData[iddesa][tahun][jenis] = +jumlah;
+
+        iddesaMap[iddesa] = { kecamatan: kec, Puskesmas: pusk, desa };
       });
 
-    function loadKasus() {
-      Papa.parse("https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv", {
-        download: true,
-        header: true,
-        complete: function(results) {
-          const rows = results.data;
-          rows.forEach(row => {
-            const id = row.iddesa;
-            const tahun = row.Tahun;
-            const jenis = row["Jenis Kasus"];
-            const jumlah = parseInt(row.Jumlah) || 0;
+      // Isi dropdown filter
+      const tahunList = [...new Set(rows.map(r => r[4]))].sort();
+      tahunList.forEach(t => tahunSelect.innerHTML += `<option value="${t}">${t}</option>`);
+      const jenisList = [...new Set(rows.map(r => r[5]))];
+      jenisList.forEach(j => jenisSelect.innerHTML += `<option value="${j}">${j}</option>`);
+      const kecList = [...new Set(rows.map(r => r[1]))];
+      kecList.forEach(k => kecSelect.innerHTML += `<option value="${k}">${k}</option>`);
 
-            const kecamatan = row.kecamatan;
-            const puskesmas = row.Puskesmas;
-            const desa = row.desa;
-
-            if (!iddesaMap[id]) {
-              iddesaMap[id] = { kecamatan, puskesmas, desa };
-            }
-
-            if (!kasusData[id]) kasusData[id] = {};
-            if (!kasusData[id][tahun]) kasusData[id][tahun] = {};
-            kasusData[id][tahun][jenis] = jumlah;
-
-            if (!kecPuskesmasMap[kecamatan]) kecPuskesmasMap[kecamatan] = new Set();
-            kecPuskesmasMap[kecamatan].add(puskesmas);
-          });
-
-          isiFilter();
-          updateMap();
-        }
+      // Event filter bertingkat
+      kecSelect.addEventListener("change", () => {
+        const kec = kecSelect.value;
+        const filtered = rows.filter(r => !kec || r[1] === kec);
+        const puskList = [...new Set(filtered.map(r => r[2]))];
+        puskesmasSelect.innerHTML = `<option value="">Semua</option>`;
+        puskList.forEach(p => puskesmasSelect.innerHTML += `<option value="${p}">${p}</option>`);
+        updateMap();
       });
-    }
 
-    function isiFilter() {
-      const tahunSet = new Set();
-      const jenisSet = new Set();
-      const kecSet = new Set();
+      [tahunSelect, jenisSelect, puskesmasSelect].forEach(el => el.addEventListener("change", updateMap));
 
-      for (let id in kasusData) {
-        const info = iddesaMap[id];
-        if (!info) continue;
-
-        for (let tahun in kasusData[id]) {
-          tahunSet.add(tahun);
-          for (let jenis in kasusData[id][tahun]) {
-            jenisSet.add(jenis);
-          }
+      geojsonLayer = L.geoJson(geojson, {
+        onEachFeature: function (feature, layer) {
+          layer.setStyle({ color: "#999", weight: 1, fillOpacity: 0.7 });
         }
-        kecSet.add(info.kecamatan);
-      }
+      }).addTo(map);
 
-      document.getElementById("filterTahun").innerHTML = [...tahunSet].sort().map(t => `<option value="${t}">${t}</option>`).join('');
-      document.getElementById("filterJenis").innerHTML = [...jenisSet].sort().map(j => `<option value="${j}">${j}</option>`).join('');
-      document.getElementById("filterKecamatan").innerHTML = ['<option value="">(Semua)</option>', ...[...kecSet].sort().map(k => `<option value="${k}">${k}</option>`)].join('');
-
-      document.getElementById("filterKecamatan").onchange = updatePuskesmasOptions;
-      document.getElementById("filterPuskesmas").onchange = updateMap;
-      document.getElementById("filterTahun").onchange = updateMap;
-      document.getElementById("filterJenis").onchange = updateMap;
-
-      updatePuskesmasOptions();
-    }
-
-    function updatePuskesmasOptions() {
-      const kecamatan = document.getElementById("filterKecamatan").value;
-      let options = ['<option value="">(Semua)</option>'];
-
-      if (kecamatan && kecPuskesmasMap[kecamatan]) {
-        options.push(...[...kecPuskesmasMap[kecamatan]].sort().map(p => `<option value="${p}">${p}</option>`));
-      }
-
-      document.getElementById("filterPuskesmas").innerHTML = options.join('');
-      updateMap();
+      tahunSelect.selectedIndex = tahunList.length - 1; // pilih tahun terakhir
+      kecSelect.dispatchEvent(new Event('change'));
     }
 
     function updateMap() {
-      const tahun = document.getElementById("filterTahun").value;
-      const jenis = document.getElementById("filterJenis").value;
-      const kecamatan = document.getElementById("filterKecamatan").value;
-      const puskesmas = document.getElementById("filterPuskesmas").value;
+      const tahun = tahunSelect.value;
+      const jenis = jenisSelect.value;
+      const kecamatan = kecSelect.value;
+      const puskesmas = puskesmasSelect.value;
 
       let total = 0;
-      let bounds = [];
+      let matchingLayers = [];
 
       geojsonLayer.eachLayer(layer => {
         const id = layer.feature.properties.iddesa;
         const info = iddesaMap[id];
         if (!info) {
           layer.setStyle({ fillOpacity: 0 });
-          layer.remove();
           return;
         }
 
         const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
+        const cocok = (!kecamatan || info.kecamatan === kecamatan) &&
+                      (!puskesmas || info.Puskesmas === puskesmas);
 
-        if (
-          (kecamatan && info.kecamatan !== kecamatan) ||
-          (puskesmas && info.puskesmas !== puskesmas && puskesmas !== "")
-        ) {
-          map.removeLayer(layer);
-          return;
+        if (cocok) {
+          total += jumlah;
+          const color = jumlah === 0 ? "#eee" :
+                        jumlah < 5 ? "#fee08b" :
+                        jumlah < 15 ? "#f46d43" : "#d73027";
+
+          layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
+          layer.bindPopup(`<b>${info.desa}</b><br>Kecamatan: ${info.kecamatan}<br>${jenis} ${tahun}: ${jumlah}`);
+          matchingLayers.push(layer);
+        } else {
+          layer.setStyle({ fillOpacity: 0 });
+          layer.closePopup();
         }
-
-        total += jumlah;
-
-        const color = jumlah === 0 ? "#eee" :
-                      jumlah < 5 ? "#fee08b" :
-                      jumlah < 15 ? "#f46d43" :
-                      "#d73027";
-
-        layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
-        layer.bindPopup(`<strong>${info.desa}</strong><br>Kecamatan: ${info.kecamatan}<br>${jenis} ${tahun}: ${jumlah}`);
-        if (!map.hasLayer(layer)) geojsonLayer.addLayer(layer);
-
-        bounds.push(layer.getBounds());
       });
 
-      if (bounds.length) {
-        const allBounds = bounds.reduce((a, b) => a.extend(b), bounds[0]);
-        map.fitBounds(allBounds);
-      }
-
       document.getElementById("totalKasus").innerHTML = `<strong>Total Kasus: ${total}</strong>`;
+
+      if (matchingLayers.length > 0) {
+        const group = new L.featureGroup(matchingLayers);
+        map.fitBounds(group.getBounds().pad(0.2));
+      }
     }
+
+    loadData();
   </script>
 </body>
 </html>
