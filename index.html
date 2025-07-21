@@ -135,9 +135,9 @@
       const jenis = document.getElementById("filterJenis").value;
       const kecamatan = document.getElementById("filterKecamatan").value;
       const puskesmas = document.getElementById("filterPuskesmas").value;
-
+    
       let total = 0;
-
+    
       geojsonLayer.eachLayer(layer => {
         const id = layer.feature.properties.iddesa;
         const info = iddesaMap[id];
@@ -145,31 +145,43 @@
           layer.setStyle({ fillOpacity: 0 });
           return;
         }
-
+    
         const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-
-        if (
-          (kecamatan && info.kecamatan !== kecamatan) ||
-          (puskesmas && info.puskesmas !== puskesmas)
-        ) {
-          layer.setStyle({ fillOpacity: 0 });
+    
+        // Cek apakah desa ini sesuai filter
+        const cocokKecamatan = !kecamatan || info.kecamatan === kecamatan;
+        const cocokPuskesmas = !puskesmas || info.puskesmas === puskesmas;
+    
+        if (cocokKecamatan && cocokPuskesmas) {
+          total += jumlah;
+    
+          const color = jumlah === 0 ? "#eee" :
+                        jumlah < 5 ? "#fee08b" :
+                        jumlah < 15 ? "#f46d43" :
+                        "#d73027";
+    
+          layer.setStyle({
+            fillColor: color,
+            fillOpacity: 0.7,
+            color: "#555"
+          });
+    
+          layer.bindPopup(`
+            <strong>${layer.feature.properties.desa}</strong><br>
+            Kecamatan: ${layer.feature.properties.kecamatan}<br>
+            Puskesmas: ${info.puskesmas}<br>
+            Jumlah Kasus: ${jumlah}
+          `);
+        } else {
+          // Gelapkan desa yang tidak masuk filter
+          layer.setStyle({
+            fillColor: "#ccc",
+            fillOpacity: 0.2,
+            color: "#aaa"
+          });
           layer.closePopup();
-          return;
         }
-
-        total += jumlah;
-
-        const color = jumlah === 0 ? "#eee" :
-                      jumlah < 5 ? "#fee08b" :
-                      jumlah < 15 ? "#f46d43" :
-                      "#d73027";
-
-        layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
-        layer.bindPopup(`<strong>${layer.feature.properties.desa}</strong><br>Kecamatan: ${layer.feature.properties.kecamatan}<br>Jumlah Kasus: ${jumlah}`);
       });
-
+    
       document.getElementById("totalKasus").innerHTML = `<strong>Total Kasus: ${total}</strong>`;
     }
-  </script>
-</body>
-</html>
