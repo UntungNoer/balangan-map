@@ -6,17 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
     body, html, #map { margin:0; padding:0; height:100%; }
     .filter-box {
-      position: absolute; top:10px; right:10px;
-      background:white; padding:10px; z-index:1000;
-      border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.3);
+      position: absolute; top: 10px; right: 10px;
+      background: white; padding: 10px; z-index: 1000;
+      border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.3);
     }
   </style>
 </head>
 <body>
 <div id="map"></div>
+
 <div class="filter-box">
   <label>Tahun: <select id="filterTahun"></select></label><br>
   <label>Jenis Kasus: <select id="filterJenis"></select></label>
@@ -31,63 +33,94 @@
   let kasusData = {};
   let geojsonLayer;
 
+  // Load GeoJSON dari GitHub
   fetch("https://raw.githubusercontent.com/UntungNoer/balangan-map/main/Dsblg.geojson")
-    .then(r => r.json())
-    .then(geo => {
-      geojsonLayer = L.geoJSON(geo, {
-        style: () => ({ color:'#333', fillColor:'#eee', weight:1, fillOpacity:0.7 }),
+    .then(res => res.json())
+    .then(geojson => {
+      geojsonLayer = L.geoJSON(geojson, {
+        style: () => ({
+          color: "#333",
+          fillColor: "#eee",
+          weight: 1,
+          fillOpacity: 0.7
+        }),
         onEachFeature: (feature, layer) => {
           layer.on("click", () => {
             const id = feature.properties.iddesa;
             const tahun = document.getElementById("filterTahun").value;
             const jenis = document.getElementById("filterJenis").value;
             const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-            const namaDesa = feature.properties.desa || 'Desa tidak dikenal';
-            const namaKec = feature.properties.kecamatan || 'Kecamatan tidak dikenal';
+
+            const namaDesa = feature.properties.DESA || 'Desa tidak dikenal';
+            const namaKec = feature.properties.KECAMATAN || 'Kecamatan tidak dikenal';
+
             layer.bindPopup(`<b>${namaDesa}</b><br><i>${namaKec}</i><br>${jenis} (${tahun}): ${jumlah}`).openPopup();
           });
         }
       }).addTo(map);
+
+      // Setelah peta siap, ambil data kasus
       loadKasus();
     });
 
   function loadKasus() {
-    fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb...output=csv")
-      .then(r => r.text())
+    fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv")
+      .then(res => res.text())
       .then(csv => {
         const rows = csv.trim().split('\n').map(r => r.split(','));
-        const h = rows[0];
-        rows.slice(1).forEach(r => {
+        const headers = rows[0];
+        rows.slice(1).forEach(row => {
           const obj = {};
-          h.forEach((c,i) => obj[c.trim()] = r[i]?.trim());
-          const id = obj.iddesa, tahun = obj.Tahun, jenis = obj["Jenis Kasus"], jumlah = parseInt(obj.Jumlah)||0;
+          headers.forEach((h, i) => obj[h.trim()] = row[i]?.trim());
+          const id = obj.iddesa;
+          const tahun = obj.Tahun;
+          const jenis = obj["Jenis Kasus"];
+          const jumlah = parseInt(obj.Jumlah) || 0;
+
           if (!kasusData[id]) kasusData[id] = {};
           if (!kasusData[id][tahun]) kasusData[id][tahun] = {};
           kasusData[id][tahun][jenis] = jumlah;
         });
+
         isiFilter();
         updateMap();
       });
   }
 
   function isiFilter() {
-    const tSet = new Set(), jSet = new Set();
-    Object.values(kasusData).forEach(o => {
-      Object.keys(o).forEach(t => Object.keys(o[t]).forEach(j => jSet.add(j)));
-      Object.keys(o).forEach(t => tSet.add(t));
-    });
-    document.getElementById("filterTahun").innerHTML = [...tSet].sort().map(t => `<option>${t}</option>`).join('');
-    document.getElementById("filterJenis").innerHTML = [...jSet].sort().map(j => `<option>${j}</option>`).join('');
-    ['filterTahun','filterJenis'].forEach(id => document.getElementById(id).onchange = updateMap);
+    const tahunSet = new Set();
+    const jenisSet = new Set();
+
+    for (let id in kasusData) {
+      for (let tahun in kasusData[id]) {
+        tahunSet.add(tahun);
+        for (let jenis in kasusData[id][tahun]) {
+          jenisSet.add(jenis);
+        }
+      }
+    }
+
+    const tahunOptions = [...tahunSet].sort().map(t => `<option>${t}</option>`).join('');
+    const jenisOptions = [...jenisSet].sort().map(j => `<option>${j}</option>`).join('');
+
+    document.getElementById("filterTahun").innerHTML = tahunOptions;
+    document.getElementById("filterJenis").innerHTML = jenisOptions;
+
+    document.getElementById("filterTahun").onchange = updateMap;
+    document.getElementById("filterJenis").onchange = updateMap;
   }
 
   function updateMap() {
     const tahun = document.getElementById("filterTahun").value;
     const jenis = document.getElementById("filterJenis").value;
+
     geojsonLayer.eachLayer(layer => {
       const id = layer.feature.properties.iddesa;
       const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-      const color = jumlah===0? '#eee': jumlah<5? '#fee08b': jumlah<15? '#f46d43':'#d73027';
+      const color = jumlah === 0 ? "#eee" :
+                    jumlah < 5 ? "#fee08b" :
+                    jumlah < 15 ? "#f46d43" :
+                    "#d73027";
       layer.setStyle({ fillColor: color });
     });
   }
