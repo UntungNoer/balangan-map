@@ -51,8 +51,8 @@
             const jenis = document.getElementById("filterJenis").value;
             const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
 
-            const namaDesa = feature.properties.DESA || 'Desa tidak dikenal';
-            const namaKec = feature.properties.KECAMATAN || 'Kecamatan tidak dikenal';
+            const namaDesa = feature.properties.desa || 'Desa tidak dikenal';
+            const namaKec = feature.properties.kecamatan || 'Kecamatan tidak dikenal';
 
             layer.bindPopup(`<b>${namaDesa}</b><br><i>${namaKec}</i><br>${jenis} (${tahun}): ${jumlah}`).openPopup();
           });
