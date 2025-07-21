@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Peta Penyakit Balangan</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body, html, #map { margin:0; padding:0; height:100%; }
+    .filter-box {
+      position: absolute; top: 10px; right: 10px;
+      background: white; padding: 10px; z-index: 1000;
+      border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="filter-box">
+  <label>Tahun: <select id="filterTahun"></select></label><br>
+  <label>Jenis Kasus: <select id="filterJenis"></select></label>
+</div>
+
+<script>
+  const map = L.map('map').setView([-2.3, 115.5], 9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  let kasusData = {};
+  let geojsonLayer;
+
+  // Load GeoJSON dari GitHub
+  fetch("https://raw.githubusercontent.com/UntungNoer/balangan-map/main/Dsblg.geojson")
+    .then(res => res.json())
+    .then(geojson => {
+      geojsonLayer = L.geoJSON(geojson, {
+        style: () => ({ color: "#333", fillColor: "#eee", weight: 1, fillOpacity: 0.7 }),
+        onEachFeature: (feature, layer) => {
+          layer.on("click", () => {
+            const id = feature.properties.ID;
+            const tahun = document.getElementById("filterTahun").value;
+            const jenis = document.getElementById("filterJenis").value;
+            const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
+            layer.bindPopup(`<b>${feature.properties.DESA || id}</b><br>${jenis} (${tahun}): ${jumlah}`).openPopup();
+          });
+        }
+      }).addTo(map);
+
+      // Load data kasus setelah GeoJSON siap
+      loadKasus();
+    });
+
+  function loadKasus() {
+    fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv")
+      .then(res => res.text())
+      .then(csv => {
+        const rows = csv.trim().split('\n').map(r => r.split(','));
+        const headers = rows[0];
+        rows.slice(1).forEach(row => {
+          const obj = {};
+          headers.forEach((h, i) => obj[h.trim()] = row[i]?.trim());
+          const id = obj.ID;
+          const tahun = obj.Tahun;
+          const jenis = obj["Jenis Kasus"];
+          const jumlah = parseInt(obj.Jumlah) || 0;
+
+          if (!kasusData[id]) kasusData[id] = {};
+          if (!kasusData[id][tahun]) kasusData[id][tahun] = {};
+          kasusData[id][tahun][jenis] = jumlah;
+        });
+
+        isiFilter();
+        updateMap();
+      });
+  }
+
+  function isiFilter() {
+    const tahunSet = new Set();
+    const jenisSet = new Set();
+
+    for (let id in kasusData) {
+      for (let tahun in kasusData[id]) {
+        tahunSet.add(tahun);
+        for (let jenis in kasusData[id][tahun]) {
+          jenisSet.add(jenis);
+        }
+      }
+    }
+
+    const tahunOptions = [...tahunSet].sort().map(t => `<option>${t}</option>`).join('');
+    const jenisOptions = [...jenisSet].sort().map(j => `<option>${j}</option>`).join('');
+
+    document.getElementById("filterTahun").innerHTML = tahunOptions;
+    document.getElementById("filterJenis").innerHTML = jenisOptions;
+
+    document.getElementById("filterTahun").onchange = updateMap;
+    document.getElementById("filterJenis").onchange = updateMap;
+  }
+
+  function updateMap() {
+    const tahun = document.getElementById("filterTahun").value;
+    const jenis = document.getElementById("filterJenis").value;
+
+    geojsonLayer.eachLayer(layer => {
+      const id = layer.feature.properties.ID;
+      const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
+      const color = jumlah == 0 ? "#eee" : jumlah < 5 ? "#fee08b" : jumlah < 15 ? "#f46d43" : "#d73027";
+      layer.setStyle({ fillColor: color });
+    });
+  }
+</script>
+</body>
+</html>
