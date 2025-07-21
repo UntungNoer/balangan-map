@@ -1,129 +1,175 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Peta Penyakit Balangan</title>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
+  <title>Kasus Per Desa</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <style>
-    body, html, #map { margin:0; padding:0; height:100%; }
-    .filter-box {
-      position: absolute; top: 10px; right: 10px;
-      background: white; padding: 10px; z-index: 1000;
-      border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    #map { height: 85vh; }
+    .filter-panel {
+      padding: 10px;
+      background: #f8f8f8;
+    }
+    label, select {
+      margin-right: 10px;
     }
   </style>
 </head>
 <body>
-<div id="map"></div>
+  <div class="filter-panel">
+    <label>Kecamatan: <select id="filterKecamatan"></select></label>
+    <label>Puskesmas: <select id="filterPuskesmas"></select></label>
+    <label>Tahun: <select id="filterTahun"></select></label>
+    <label>Jenis Kasus: <select id="filterJenis"></select></label>
+    <span id="totalKasus"></span>
+  </div>
+  <div id="map"></div>
 
-<div class="filter-box">
-  <label>Tahun: <select id="filterTahun"></select></label><br>
-  <label>Jenis Kasus: <select id="filterJenis"></select></label>
-</div>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
-<script>
-  const map = L.map('map').setView([-2.3, 115.5], 9);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
+  <script>
+    let map = L.map('map').setView([-2.3, 115.6], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
 
-  let kasusData = {};
-  let geojsonLayer;
+    let geojsonLayer;
+    let kasusData = {};
+    let iddesaMap = {};
+    let kecPuskesmasMap = {};
 
-  // Load GeoJSON dari GitHub
-  fetch("https://raw.githubusercontent.com/UntungNoer/balangan-map/main/Dsblg.geojson")
-    .then(res => res.json())
-    .then(geojson => {
-      geojsonLayer = L.geoJSON(geojson, {
-        style: () => ({
-          color: "#333",
-          fillColor: "#eee",
-          weight: 1,
-          fillOpacity: 0.7
-        }),
-        onEachFeature: (feature, layer) => {
-          layer.on("click", () => {
-            const id = feature.properties.iddesa;
-            const tahun = document.getElementById("filterTahun").value;
-            const jenis = document.getElementById("filterJenis").value;
-            const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-
-            const namaDesa = feature.properties.desa || 'Desa tidak dikenal';
-            const namaKec = feature.properties.kecamatan || 'Kecamatan tidak dikenal';
-
-            layer.bindPopup(`<b>${namaDesa}</b><br><i>${namaKec}</i><br>${jenis} (${tahun}): ${jumlah}`).openPopup();
-          });
-        }
-      }).addTo(map);
-
-      // Setelah peta siap, ambil data kasus
-      loadKasus();
-    });
-
-  function loadKasus() {
-    fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv")
-      .then(res => res.text())
-      .then(csv => {
-        const rows = csv.trim().split('\n').map(r => r.split(','));
-        const headers = rows[0];
-        rows.slice(1).forEach(row => {
-          const obj = {};
-          headers.forEach((h, i) => obj[h.trim()] = row[i]?.trim());
-          const id = obj.iddesa;
-          const tahun = obj.Tahun;
-          const jenis = obj["Jenis Kasus"];
-          const jumlah = parseInt(obj.Jumlah) || 0;
-
-          if (!kasusData[id]) kasusData[id] = {};
-          if (!kasusData[id][tahun]) kasusData[id][tahun] = {};
-          kasusData[id][tahun][jenis] = jumlah;
-        });
-
-        isiFilter();
-        updateMap();
+    fetch("Dsblg.geojson")
+      .then(res => res.json())
+      .then(geojson => {
+        geojsonLayer = L.geoJSON(geojson, {
+          style: { color: "#555", weight: 1, fillOpacity: 0.5 },
+          onEachFeature: (feature, layer) => {
+            const props = feature.properties;
+            layer.bindTooltip(`${props.desa}, ${props.kecamatan}`);
+          }
+        }).addTo(map);
+        loadKasus();
       });
-  }
 
-  function isiFilter() {
-    const tahunSet = new Set();
-    const jenisSet = new Set();
+    function loadKasus() {
+      Papa.parse("Data_Tidy.csv", {
+        download: true,
+        header: true,
+        complete: function(results) {
+          const rows = results.data;
+          rows.forEach(row => {
+            const id = row.iddesa;
+            const tahun = row.Tahun;
+            const jenis = row["Jenis Kasus"];
+            const jumlah = parseInt(row.Jumlah) || 0;
 
-    for (let id in kasusData) {
-      for (let tahun in kasusData[id]) {
-        tahunSet.add(tahun);
-        for (let jenis in kasusData[id][tahun]) {
-          jenisSet.add(jenis);
+            const kecamatan = row.kecamatan;
+            const puskesmas = row.Puskesmas;
+            const desa = row.desa;
+
+            if (!iddesaMap[id]) {
+              iddesaMap[id] = { kecamatan, puskesmas, desa };
+            }
+
+            if (!kasusData[id]) kasusData[id] = {};
+            if (!kasusData[id][tahun]) kasusData[id][tahun] = {};
+            kasusData[id][tahun][jenis] = jumlah;
+
+            if (!kecPuskesmasMap[kecamatan]) kecPuskesmasMap[kecamatan] = new Set();
+            kecPuskesmasMap[kecamatan].add(puskesmas);
+          });
+
+          isiFilter();
+          updateMap();
         }
-      }
+      });
     }
 
-    const tahunOptions = [...tahunSet].sort().map(t => `<option>${t}</option>`).join('');
-    const jenisOptions = [...jenisSet].sort().map(j => `<option>${j}</option>`).join('');
+    function isiFilter() {
+      const tahunSet = new Set();
+      const jenisSet = new Set();
+      const kecSet = new Set();
 
-    document.getElementById("filterTahun").innerHTML = tahunOptions;
-    document.getElementById("filterJenis").innerHTML = jenisOptions;
+      for (let id in kasusData) {
+        const info = iddesaMap[id];
+        if (!info) continue;
 
-    document.getElementById("filterTahun").onchange = updateMap;
-    document.getElementById("filterJenis").onchange = updateMap;
-  }
+        for (let tahun in kasusData[id]) {
+          tahunSet.add(tahun);
+          for (let jenis in kasusData[id][tahun]) {
+            jenisSet.add(jenis);
+          }
+        }
+        kecSet.add(info.kecamatan);
+      }
 
-  function updateMap() {
-    const tahun = document.getElementById("filterTahun").value;
-    const jenis = document.getElementById("filterJenis").value;
+      document.getElementById("filterTahun").innerHTML = [...tahunSet].sort().map(t => `<option value="${t}">${t}</option>`).join('');
+      document.getElementById("filterJenis").innerHTML = [...jenisSet].sort().map(j => `<option value="${j}">${j}</option>`).join('');
+      document.getElementById("filterKecamatan").innerHTML = ['<option value="">(Semua)</option>', ...[...kecSet].sort().map(k => `<option value="${k}">${k}</option>`)].join('');
 
-    geojsonLayer.eachLayer(layer => {
-      const id = layer.feature.properties.iddesa;
-      const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
-      const color = jumlah === 0 ? "#eee" :
-                    jumlah < 5 ? "#fee08b" :
-                    jumlah < 15 ? "#f46d43" :
-                    "#d73027";
-      layer.setStyle({ fillColor: color });
-    });
-  }
-</script>
+      document.getElementById("filterKecamatan").onchange = updatePuskesmasOptions;
+      document.getElementById("filterPuskesmas").onchange = updateMap;
+      document.getElementById("filterTahun").onchange = updateMap;
+      document.getElementById("filterJenis").onchange = updateMap;
+
+      updatePuskesmasOptions();
+    }
+
+    function updatePuskesmasOptions() {
+      const kecamatan = document.getElementById("filterKecamatan").value;
+      let options = ['<option value="">(Semua)</option>'];
+
+      if (kecamatan && kecPuskesmasMap[kecamatan]) {
+        options.push(...[...kecPuskesmasMap[kecamatan]].sort().map(p => `<option value="${p}">${p}</option>`));
+      }
+
+      document.getElementById("filterPuskesmas").innerHTML = options.join('');
+      updateMap();
+    }
+
+    function updateMap() {
+      const tahun = document.getElementById("filterTahun").value;
+      const jenis = document.getElementById("filterJenis").value;
+      const kecamatan = document.getElementById("filterKecamatan").value;
+      const puskesmas = document.getElementById("filterPuskesmas").value;
+
+      let total = 0;
+
+      geojsonLayer.eachLayer(layer => {
+        const id = layer.feature.properties.iddesa;
+        const info = iddesaMap[id];
+        if (!info) {
+          layer.setStyle({ fillOpacity: 0 });
+          return;
+        }
+
+        const jumlah = kasusData[id]?.[tahun]?.[jenis] ?? 0;
+
+        if (
+          (kecamatan && info.kecamatan !== kecamatan) ||
+          (puskesmas && info.Puskesmas !== puskesmas)
+        ) {
+          layer.setStyle({ fillOpacity: 0 });
+          layer.closePopup();
+          return;
+        }
+
+        total += jumlah;
+
+        const color = jumlah === 0 ? "#eee" :
+                      jumlah < 5 ? "#fee08b" :
+                      jumlah < 15 ? "#f46d43" :
+                      "#d73027";
+
+        layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
+        layer.bindPopup(`<strong>${layer.feature.properties.desa}</strong><br>Kecamatan: ${layer.feature.properties.kecamatan}<br>Jumlah Kasus: ${jumlah}`);
+      });
+
+      document.getElementById("totalKasus").innerHTML = `<strong>Total Kasus: ${total}</strong>`;
+    }
+  </script>
 </body>
 </html>
