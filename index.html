@@ -5,228 +5,251 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Peta Kasus Per Desa</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { margin: 0; font-family: sans-serif; }
-    .container {
+    body {
+      margin: 0;
+      font-family: sans-serif;
       display: flex;
       flex-direction: row;
       height: 100vh;
     }
-    #map {
-      flex: 2;
-      height: 100%;
-    }
-    .sidebar {
-      flex: 1;
+    #sidebar {
+      width: 280px;
+      min-width: 220px;
+      max-width: 300px;
       padding: 10px;
+      box-sizing: border-box;
       background: #f9f9f9;
       overflow-y: auto;
-      box-shadow: -1px 0 5px rgba(0,0,0,0.1);
+      border-right: 1px solid #ddd;
     }
-    .filters {
-      margin-bottom: 10px;
+    #map {
+      flex-grow: 1;
     }
     .filters label {
       display: block;
-      margin: 5px 0;
+      margin-bottom: 8px;
+      font-size: 14px;
     }
-    select {
+    .filters select {
       width: 100%;
-      padding: 5px;
+      padding: 4px;
+      font-size: 14px;
     }
     #totalKasus {
+      margin-top: 10px;
       font-weight: bold;
-      margin: 10px 0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #chartContainer {
+      margin-top: 20px;
     }
     canvas {
       width: 100% !important;
-      height: 200px !important;
+      height: auto !important;
     }
-
     @media (max-width: 768px) {
-      .container {
+      body {
         flex-direction: column;
       }
-      .sidebar {
-        order: -1;
-        flex: none;
+      #sidebar {
         width: 100%;
+        max-height: 50vh;
+        border-right: none;
+        border-bottom: 1px solid #ccc;
       }
       #map {
-        flex: 1;
-        height: 60vh;
+        height: 50vh;
       }
     }
   </style>
 </head>
 <body>
-<div class="container">
-  <div id="map"></div>
-  <div class="sidebar">
+  <div id="sidebar">
     <div class="filters">
       <label>Tahun: <select id="filterTahun"></select></label>
       <label>Jenis Kasus: <select id="filterJenis"></select></label>
-      <label>Kecamatan: <select id="filterKecamatan"><option value="">Semua</option></select></label>
+      <label>Kecamatan: <select id="filterKecamatan"></select></label>
       <label>Puskesmas: <select id="filterPuskesmas"><option value="">Semua</option></select></label>
     </div>
-    <div id="totalKasus">Total Kasus: 0</div>
-    <canvas id="chartKasus"></canvas>
+    <div id="totalKasus"></div>
+    <div id="chartContainer">
+      <canvas id="chartKasus"></canvas>
+    </div>
   </div>
-</div>
+  <div id="map"></div>
 
-<script>
-  const map = L.map('map').setView([-2.3, 115.6], 9);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const map = L.map('map').setView([-2.3, 115.6], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-  let allLayers = {};
-  let kasusData = {};
-  let iddesaMap = {};
-  let tahunList = [];
+    let allLayers = {};
+    let kasusData = {};
+    let iddesaMap = {};
 
-  const tahunSelect = document.getElementById("filterTahun");
-  const jenisSelect = document.getElementById("filterJenis");
-  const kecSelect = document.getElementById("filterKecamatan");
-  const puskesmasSelect = document.getElementById("filterPuskesmas");
-  const chartCtx = document.getElementById("chartKasus").getContext("2d");
-  let chart = null;
+    const tahunSelect = document.getElementById("filterTahun");
+    const jenisSelect = document.getElementById("filterJenis");
+    const kecSelect = document.getElementById("filterKecamatan");
+    const puskesmasSelect = document.getElementById("filterPuskesmas");
 
-  async function loadData() {
-    const [csvRes, geoRes] = await Promise.all([
-      fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv'),
-      fetch('https://untungnoer.github.io/balangan-map/Dsblg.geojson')
-    ]);
-    const csvText = await csvRes.text();
-    const geojson = await geoRes.json();
+    const chartCtx = document.getElementById("chartKasus").getContext("2d");
+    let barChart;
 
-    // Parse CSV
-    const rows = csvText.trim().split("\n").slice(1).map(row => row.split(","));
-    rows.forEach(([iddesa, kec, pusk, desa, tahun, jenis, jumlah]) => {
-      if (!kasusData[iddesa]) kasusData[iddesa] = {};
-      if (!kasusData[iddesa][tahun]) kasusData[iddesa][tahun] = {};
-      kasusData[iddesa][tahun][jenis] = +jumlah;
-      iddesaMap[iddesa] = { kecamatan: kec, Puskesmas: pusk, desa };
-    });
+    async function loadData() {
+      const [csvRes, geoRes] = await Promise.all([
+        fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vSwQg9Qb96i2JjMBDBeuTKyl8fLDxm7a9cAMBMeVmDahfjRx_Kop9p4j-pG4SxT2bEyOXC3Ok9Wdp8s/pub?gid=564163547&single=true&output=csv'),
+        fetch('https://untungnoer.github.io/balangan-map/Dsblg.geojson')
+      ]);
+      const csvText = await csvRes.text();
+      const geojson = await geoRes.json();
 
-    tahunList = [...new Set(rows.map(r => r[4]))].sort();
-    tahunList.forEach(t => tahunSelect.innerHTML += `<option value="${t}">${t}</option>`);
-    const jenisList = [...new Set(rows.map(r => r[5]))];
-    jenisList.forEach(j => jenisSelect.innerHTML += `<option value="${j}">${j}</option>`);
-    const kecList = [...new Set(rows.map(r => r[1]))];
-    kecList.forEach(k => kecSelect.innerHTML += `<option value="${k}">${k}</option>`);
-
-    geojson.features.forEach(feature => {
-      const id = feature.properties.iddesa;
-      const layer = L.geoJson(feature, {
-        style: { color: "#999", weight: 1, fillOpacity: 0 }
+      const rows = csvText.trim().split("\n").slice(1).map(row => row.split(","));
+      rows.forEach(([iddesa, kec, pusk, desa, tahun, jenis, jumlah]) => {
+        if (!kasusData[iddesa]) kasusData[iddesa] = {};
+        if (!kasusData[iddesa][tahun]) kasusData[iddesa][tahun] = {};
+        if (!kasusData[iddesa][tahun][jenis]) kasusData[iddesa][tahun][jenis] = 0;
+        kasusData[iddesa][tahun][jenis] += +jumlah;
+        iddesaMap[iddesa] = { kecamatan: kec, Puskesmas: pusk, desa };
       });
-      allLayers[id] = layer;
-    });
 
-    Object.values(allLayers).forEach(l => l.addTo(map));
+      const tahunList = [...new Set(rows.map(r => r[4]))].sort();
+      tahunList.forEach(t => tahunSelect.innerHTML += `<option value="${t}">${t}</option>`);
+      const jenisList = [...new Set(rows.map(r => r[5]))];
+      jenisList.forEach(j => jenisSelect.innerHTML += `<option value="${j}">${j}</option>`);
+      const kecList = [...new Set(rows.map(r => r[1]))];
+      kecSelect.innerHTML = `<option value="">Semua</option>`;
+      kecList.forEach(k => kecSelect.innerHTML += `<option value="${k}">${k}</option>`);
 
-    kecSelect.addEventListener("change", () => {
-      const kec = kecSelect.value;
-      const filtered = rows.filter(r => !kec || r[1] === kec);
-      const puskList = [...new Set(filtered.map(r => r[2]))];
-      puskesmasSelect.innerHTML = `<option value="">Semua</option>`;
-      puskList.forEach(p => puskesmasSelect.innerHTML += `<option value="${p}">${p}</option>`);
-      updateMap();
-    });
-
-    [tahunSelect, jenisSelect, puskesmasSelect].forEach(el => el.addEventListener("change", updateMap));
-
-    tahunSelect.selectedIndex = tahunList.length - 1;
-    kecSelect.dispatchEvent(new Event('change'));
-  }
-
-  function updateMap() {
-    const tahun = tahunSelect.value;
-    const jenis = jenisSelect.value;
-    const kecamatan = kecSelect.value;
-    const puskesmas = puskesmasSelect.value;
-
-    let total = 0;
-    let matchingLayers = [];
-    let yearlyTotals = {};
-
-    tahunList.forEach(t => yearlyTotals[t] = 0);
-
-    Object.entries(allLayers).forEach(([iddesa, layer]) => {
-      const info = iddesaMap[iddesa];
-      if (!info) return;
-
-      const cocok = (!kecamatan || info.kecamatan === kecamatan) &&
-                    (!puskesmas || info.Puskesmas === puskesmas);
-
-      map.removeLayer(layer); // selalu remove
-
-      if (cocok) {
-        const jumlah = kasusData[iddesa]?.[tahun]?.[jenis] ?? 0;
-        total += jumlah;
-
-        tahunList.forEach(t => {
-          yearlyTotals[t] += kasusData[iddesa]?.[t]?.[jenis] ?? 0;
+      geojson.features.forEach(feature => {
+        const id = feature.properties.iddesa;
+        const layer = L.geoJson(feature, {
+          style: { color: "#999", weight: 1, fillOpacity: 0 }
         });
+        allLayers[id] = layer;
+      });
 
-        const color = jumlah === 0 ? "#eee" :
-                      jumlah < 5 ? "#fee08b" :
-                      jumlah < 15 ? "#f46d43" : "#d73027";
+      Object.values(allLayers).forEach(l => l.addTo(map));
 
-        layer.setStyle({ fillColor: color, fillOpacity: 0.7 });
-        layer.bindPopup(`<b>${info.desa}</b><br>Kecamatan: ${info.kecamatan}<br>${jenis} ${tahun}: ${jumlah}`);
-        layer.addTo(map);
-        matchingLayers.push(layer);
-      } else {
-        layer.closePopup();
-      }
-    });
+      kecSelect.addEventListener("change", () => {
+        const kec = kecSelect.value;
+        const filtered = rows.filter(r => !kec || r[1] === kec);
+        const puskList = [...new Set(filtered.map(r => r[2]))];
+        puskesmasSelect.innerHTML = `<option value="">Semua</option>`;
+        puskList.forEach(p => puskesmasSelect.innerHTML += `<option value="${p}">${p}</option>`);
+        updateMap();
+      });
 
-    document.getElementById("totalKasus").innerHTML = `Total Kasus: <strong>${total}</strong>`;
+      [tahunSelect, jenisSelect, puskesmasSelect].forEach(el => el.addEventListener("change", updateMap));
 
-    if (matchingLayers.length > 0) {
-      const group = new L.featureGroup(matchingLayers.map(l => l.getLayers()[0]));
-      map.fitBounds(group.getBounds().pad(0.2));
+      tahunSelect.selectedIndex = tahunList.length - 1;
+      kecSelect.dispatchEvent(new Event('change'));
     }
 
-    // Update chart
-    const data = {
-      labels: tahunList,
-      datasets: [{
-        label: jenis + " per Tahun",
-        data: tahunList.map(t => yearlyTotals[t]),
-        backgroundColor: '#4e79a7'
-      }]
-    };
+    function updateMap() {
+      const tahun = tahunSelect.value;
+      const jenis = jenisSelect.value;
+      const kecamatan = kecSelect.value;
+      const puskesmas = puskesmasSelect.value;
 
-    if (chart) {
-      chart.data = data;
-      chart.update();
-    } else {
-      chart = new Chart(chartCtx, {
+      let total = 0;
+      let matchingLayers = [];
+
+      let dataPerTahun = {};
+
+      Object.entries(allLayers).forEach(([iddesa, layer]) => {
+        const info = iddesaMap[iddesa];
+        if (!info) return;
+
+        const cocok = (!kecamatan || info.kecamatan === kecamatan) &&
+                      (!puskesmas || info.Puskesmas === puskesmas);
+
+        let jumlah = 0;
+        if (kasusData[iddesa]) {
+          if (kasusData[iddesa][tahun] && kasusData[iddesa][tahun][jenis]) {
+            jumlah = kasusData[iddesa][tahun][jenis];
+          }
+        }
+
+        map.removeLayer(layer);
+
+        if (cocok) {
+          total += jumlah;
+          layer.setStyle({
+            fillColor: jumlah === 0 ? "#eee" :
+                      jumlah < 5 ? "#fee08b" :
+                      jumlah < 15 ? "#f46d43" : "#d73027",
+            fillOpacity: 0.7
+          });
+          layer.bindPopup(`<b>${info.desa}</b><br>Kecamatan: ${info.kecamatan}<br>${jenis} ${tahun}: ${jumlah}`);
+          layer.addTo(map);
+          matchingLayers.push(layer);
+        } else {
+          layer.closePopup();
+        }
+
+        // Ambil data semua tahun untuk grafik
+        if (cocok && kasusData[iddesa]) {
+          Object.entries(kasusData[iddesa]).forEach(([thn, jenisMap]) => {
+            const val = jenisMap[jenis] ?? 0;
+            dataPerTahun[thn] = (dataPerTahun[thn] || 0) + val;
+          });
+        }
+      });
+
+      const jenisText = jenis || "(semua jenis)";
+      const tahunText = tahun || "(semua tahun)";
+      document.getElementById("totalKasus").innerHTML = `<strong>Total Kasus ${jenisText} Tahun ${tahunText} : ${total} Kasus</strong>`;
+
+      if (matchingLayers.length > 0) {
+        const group = new L.featureGroup(matchingLayers.map(l => l.getLayers()[0]));
+        map.fitBounds(group.getBounds().pad(0.2));
+      }
+
+      updateChart(dataPerTahun);
+    }
+
+    function updateChart(dataObj) {
+      const tahun = Object.keys(dataObj).sort();
+      const nilai = tahun.map(t => dataObj[t]);
+
+      if (barChart) {
+        barChart.destroy();
+      }
+
+      barChart = new Chart(chartCtx, {
         type: 'bar',
-        data,
+        data: {
+          labels: tahun,
+          datasets: [{
+            label: 'Kasus per Tahun',
+            data: nilai,
+            backgroundColor: '#4caf50',
+            borderRadius: 4,
+            barThickness: 18
+          }]
+        },
         options: {
           responsive: true,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: {
-              label: ctx => `${ctx.raw} kasus`
-            }}
+            tooltip: { callbacks: { label: ctx => `${ctx.parsed.y} kasus` } }
           },
           scales: {
-            y: { beginAtZero: true, title: { display: true, text: 'Jumlah Kasus' }},
-            x: { title: { display: true, text: 'Tahun' }}
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0 }
+            }
           }
         }
       });
     }
-  }
 
-  loadData();
-</script>
+    loadData();
+  </script>
 </body>
 </html>
