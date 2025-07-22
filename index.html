@@ -74,6 +74,7 @@
       const jenisList = [...new Set(rows.map(r => r[5]))];
       jenisList.forEach(j => jenisSelect.innerHTML += `<option value="${j}">${j}</option>`);
       const kecList = [...new Set(rows.map(r => r[1]))];
+      kecSelect.innerHTML = `<option value="">Semua</option>`;
       kecList.forEach(k => kecSelect.innerHTML += `<option value="${k}">${k}</option>`);
 
       // GeoJSON -> simpan layer berdasarkan iddesa
